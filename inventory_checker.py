@@ -95,7 +95,7 @@ if __name__ == '__main__':
     columns = [1, 5, 10]
 
     townsend = WHSheet('Townsend Warehouse Inventory Sheet', 'Townsend Count Sheet')
-    townsend_trucklist = ['TRLR-Townsend', 'SAPELO', 'SAW DOC', 'SAW MAN', 'STEVE', 'BIRO SAW', 'GARY', 'SAWMAN2']
+    townsend_trucklist = ['TRLR-Townsend', 'SAPELO', 'SAW DOC', 'SAW MAN', 'STEVE', 'BIRO SAW', 'GARY', 'SAWMAN2', 'ETYC38']
     lakeland = WHSheet('Lakeland Warehouse Inventory Sheet', 'Lakeland Count Sheet')
     lakeland_trucklist = ['TRLR-Lakeland', 'DIGI MON', 'SAWMAN3', 'STALMIC']
     wh_list = [[townsend, townsend_trucklist, 'WH#1 Townsend'],
@@ -106,5 +106,8 @@ if __name__ == '__main__':
             itemlist = wh[0].getCol(c)[1:]
             for r in range(len(itemlist)):
                 if itemlist[r] != '':
+                    totalqty = InvItem(itemlist[r]).getTotalQty(wh[2])
                     qty = InvItem(itemlist[r]).getOnHandQty(wh[2], wh[1])
                     wh[0].setValue(r+2, c+2, qty)
+                    print("Updating {}: {}".format(wh[2], itemlist[r]))
+                    print("{} - {} = {}".format(int(totalqty), int(totalqty - qty), int(qty)))
