@@ -33,37 +33,39 @@ class InvItem:
             totalqty = 0
         return totalqty
 
-    def getTruckQty(self, truck):
+    def getTruckQty(self, warehouse):
         truckqtycommand = """
-        SELECT dbo.Inventory.Description, dbo.Truck.TruckNum, it.EndTruckQty
+        SELECT SUM(it.EndTruckQty)
         FROM dbo.Truck
-        INNER JOIN
-        (
-            SELECT a.TruckID, dbo.RouteLoad.InventoryID, dbo.RouteLoad.EndTruckQty, dbo.RouteLoad.EndUnits, a.RouteID, a.RouteDate, a.RouteDayID
-            FROM dbo.RouteLoad
             INNER JOIN
             (
-                SELECT Row_Number() OVER(PARTITION BY dbo.RouteDay.TruckID ORDER BY dbo.RouteDay.RouteDate DESC, dbo.Shift.ShiftNum DESC) rownum, RouteDayID, TruckID, RouteDate, RouteID
-                FROM dbo.RouteDay
-                LEFT JOIN dbo.Shift ON dbo.Shift.ShiftID = dbo.RouteDay.ShiftID
-                WHERE dbo.RouteDay.RouteDate <DATEADD(DAY, 1, SYSDATETIME())
-            ) a ON a.RouteDayID = dbo.RouteLoad.RouteDayID AND a.rownum = 1
-            WHERE dbo.RouteLoad.EndTruckQty <> 0
-        ) it ON it.TruckID = dbo.Truck.TruckID
-        INNER JOIN dbo.Inventory ON dbo.Inventory.InventoryID = it.InventoryID
-        WHERE dbo.Inventory.Description LIKE ? AND dbo.Truck.TruckNum = ?"""
-        self.cursor.execute(truckqtycommand, (self.item+'%', truck))
+                SELECT a.TruckID, dbo.RouteLoad.InventoryID, dbo.RouteLoad.EndTruckQty, dbo.RouteLoad.EndUnits, a.RouteID, a.RouteDate, a.RouteDayID, a.wh
+                FROM dbo.RouteLoad
+                INNER JOIN
+                (
+                    SELECT Row_Number() OVER(PARTITION BY dbo.RouteDay.TruckID ORDER BY dbo.RouteDay.RouteDate DESC, dbo.Shift.ShiftNum DESC) rownum, RouteDayID, RouteDay.TruckID, RouteDate, RouteDay.RouteID, ISNULL(Route.StagingWarehouseID, 13) AS wh
+                    FROM dbo.RouteDay
+                    LEFT JOIN dbo.Shift ON dbo.Shift.ShiftID = dbo.RouteDay.ShiftID
+                    LEFT JOIN dbo.Route ON dbo.Route.RouteID = dbo.RouteDay.RouteID
+                    WHERE dbo.RouteDay.RouteDate <DATEADD(DAY, 1, SYSDATETIME())
+                ) a ON a.RouteDayID = dbo.RouteLoad.RouteDayID AND a.rownum = 1
+                WHERE dbo.RouteLoad.EndTruckQty <> 0
+            ) it ON it.TruckID = dbo.Truck.TruckID
+            INNER JOIN dbo.Inventory ON dbo.Inventory.InventoryID = it.InventoryID
+            INNER JOIN dbo.Warehouse ON dbo.Warehouse.WarehouseID = it.wh
+            WHERE dbo.Warehouse.WarehouseNum = ? AND dbo.Inventory.Description LIKE ?"""
+        self.cursor.execute(truckqtycommand, (warehouse, self.item+'%'))
         truckqty = self.cursor.fetchone()
-        if truckqty is not None:
-            truckqty = float(truckqty[2])
+        if truckqty[0] is not None:
+            truckqty = float(truckqty[0])
         else:
             truckqty = 0
         return truckqty
 
-    def getOnHandQty(self, warehouse, trucklist):
+    def getOnHandQty(self, warehouse):
         totalqty = self.getTotalQty(warehouse)
-        truckqtylist = [self.getTruckQty(truck) for truck in trucklist]
-        return totalqty - sum(truckqtylist)
+        truckqty = self.getTruckQty(warehouse)
+        return totalqty - truckqty
 
     def closeConn(self):
         self.stalmic.close()
@@ -95,19 +97,17 @@ if __name__ == '__main__':
     columns = [1, 5, 10]
 
     townsend = WHSheet('Townsend Warehouse Inventory Sheet', 'Townsend Count Sheet')
-    townsend_trucklist = ['TRLR-Townsend', 'SAPELO', 'SAW DOC', 'SAW MAN', 'STEVE', 'BIRO SAW', 'GARY', 'SAWMAN2', 'ETYC38']
     lakeland = WHSheet('Lakeland Warehouse Inventory Sheet', 'Lakeland Count Sheet')
-    lakeland_trucklist = ['TRLR-Lakeland', 'DIGI MON', 'SAWMAN3', 'STALMIC']
-    wh_list = [[townsend, townsend_trucklist, 'WH#1 Townsend'],
-               [lakeland, lakeland_trucklist, 'WH#2 Lakeland']]
+    wh_list = [[townsend, 'WH#1 Townsend'],
+               [lakeland, 'WH#2 Lakeland']]
 
     for wh in wh_list:
         for c in columns:
             itemlist = wh[0].getCol(c)[1:]
             for r in range(len(itemlist)):
                 if itemlist[r] != '':
-                    totalqty = InvItem(itemlist[r]).getTotalQty(wh[2])
-                    qty = InvItem(itemlist[r]).getOnHandQty(wh[2], wh[1])
+                    totalqty = InvItem(itemlist[r]).getTotalQty(wh[1])
+                    qty = InvItem(itemlist[r]).getOnHandQty(wh[1])
                     wh[0].setValue(r+2, c+2, qty)
-                    print("Updating {}: {}".format(wh[2], itemlist[r]))
+                    print("Updating {}: {}".format(wh[1], itemlist[r]))
                     print("{} - {} = {}".format(int(totalqty), int(totalqty - qty), int(qty)))
